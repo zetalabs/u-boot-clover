@@ -25,6 +25,9 @@
 #include <linux/compiler.h>
 #include <bootm.h>
 #include <vxworks.h>
+#ifdef CONFIG_CMD_BOOTA
+#include <fastboot.h>
+#endif
 
 #ifdef CONFIG_ARMV7_NONSEC
 #include <asm/armv7.h>
@@ -344,6 +347,110 @@ int do_bootm_linux(int flag, int argc, char * const argv[],
 	boot_jump_linux(images, flag);
 	return 0;
 }
+
+#ifdef CONFIG_CMD_BOOTA
+
+#define DEBUG_TICK_PRINTF
+
+#ifdef DEBUG_TICK_PRINTF
+void tick_printf(char *s, int line)
+{
+	uint time, time_sec, time_rest;
+
+	time = *(volatile unsigned int *)(0x01c20C00 + 0x84);
+	time_sec = time/1000;
+	time_rest = time%1000;
+	if(!s)
+	{
+		printf("[%8d.%3d]\n",time_sec, time_rest);
+	}
+	else
+	{
+		printf("[%8d.%3d] %s %d\n",time_sec, time_rest, s, line);
+	}
+
+	return ;
+}
+#else
+void tick_printf(char *s, int line)
+{
+	return ;
+}
+#endif
+
+static int sunxi_flash_exit(void)
+{
+	return 0;
+}
+
+/* Boot android style linux kernel and ramdisk */
+int do_boota_linux (struct fastboot_boot_img_hdr *hdr)
+{
+	ulong initrd_start, initrd_end;
+	void (*kernel_entry)(int zero, int arch, uint params);
+	bd_t *bd = gd->bd;
+#ifdef DEBUG
+	printf("do_boota_linux storage_type = %d\n", storage_type);
+#endif
+	kernel_entry = (void (*)(int, int, uint))(hdr->kernel_addr);
+
+#ifdef CONFIG_CMDLINE_TAG
+	char *commandline = getenv ("bootargs");
+#endif
+
+	initrd_start = hdr->ramdisk_addr;
+	initrd_end = initrd_start + hdr->ramdisk_size;
+
+#if defined (CONFIG_SETUP_MEMORY_TAGS) || \
+    defined (CONFIG_CMDLINE_TAG) || \
+    defined (CONFIG_INITRD_TAG) || \
+    defined (CONFIG_SERIAL_TAG) || \
+    defined (CONFIG_REVISION_TAG)
+	setup_start_tag (bd);
+#ifdef CONFIG_SERIAL_TAG
+	setup_serial_tag (&params);
+#endif
+#ifdef CONFIG_REVISION_TAG
+	setup_revision_tag (&params);
+#endif
+#ifdef CONFIG_SETUP_MEMORY_TAGS
+	setup_memory_tags (bd);
+#endif
+#ifdef CONFIG_CMDLINE_TAG
+	if(strlen((const char *)hdr->cmdline)) {
+		setup_commandline_tag (bd, (char *)hdr->cmdline);
+	} else {
+		setup_commandline_tag (bd, commandline);
+	}
+#endif
+#ifdef CONFIG_INITRD_TAG
+	if (hdr->ramdisk_size)
+		setup_initrd_tag (bd, initrd_start, initrd_end);
+#endif
+#if defined (CONFIG_VFD) || defined (CONFIG_LCD)
+	setup_videolfb_tag ((gd_t *) gd);
+#endif
+	setup_end_tag (bd);
+#endif
+	sunxi_flash_exit();
+	/* we assume that the kernel is in place */
+	announce_and_cleanup(0);
+#if 0
+	sr32(SUNXI_CCM_APB1_GATING, 16, 2, 0);
+	sr32(SUNXI_CCM_APB1_GATING, 16, 1, 0);
+#endif
+
+	*(volatile unsigned int *)(0x01c20C00 + 0x84 )  = 0;
+	*(volatile unsigned int *)(0x01c20C00 + 0x8C )  = 0x05DB05DB;
+	*(volatile unsigned int *)(0x01c20C00 + 0x80 )  = 0;
+	*(volatile unsigned int *)(0x01c20000 + 0x144) &= ~(1U << 31);
+
+	kernel_entry(0, bd->bi_arch_number, bd->bi_boot_params);
+	/* does not return */
+
+        return 0;
+}
+#endif
 
 #ifdef CONFIG_CMD_BOOTZ
 

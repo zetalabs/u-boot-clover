@@ -148,6 +148,12 @@ config CMD_BOOTM
 	help
 	  Boot an application image from the memory.
 
+config CMD_BOOTA
+	bool "boota"
+	default y
+	help
+	  Boot an android image from the memory.
+
 config CMD_GO
 	bool "go"
 	default y
